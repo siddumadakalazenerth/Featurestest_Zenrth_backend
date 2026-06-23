@@ -1,19 +1,40 @@
 const User = require('../models/User');
 const Listing = require('../models/Listing');
 const Photo = require('../models/Photo');
-const { verifyToken } = require('../services/authService');
 
-async function requireAuth(req, res, next) {
+// Login/signup has been removed. Every request is treated as the single
+// shared workspace user, which is created on first use if it doesn't exist
+// yet. This keeps controllers that read `req.user._id` / `req.user.role`
+// working unchanged, without requiring anyone to sign in.
+const DEFAULT_USER_EMAIL = 'workspace@local';
+let cachedDefaultUserId = null;
+
+async function getOrCreateDefaultUser() {
+  if (cachedDefaultUserId) {
+    const existing = await User.findById(cachedDefaultUserId);
+    if (existing) return existing;
+  }
+  let user = await User.findOne({ email: DEFAULT_USER_EMAIL });
+  if (!user) {
+    user = await User.create({
+      name: 'Workspace',
+      email: DEFAULT_USER_EMAIL,
+      passwordHash: 'unused',
+      role: 'admin',
+      plan: 'enterprise',
+      monthlyToolLimit: 100000,
+    });
+  }
+  cachedDefaultUserId = user._id;
+  return user;
+}
+
+async function attachDefaultUser(req, res, next) {
   try {
-    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
-    if (!token) return res.status(401).json({ error: 'Sign in required' });
-    const payload = verifyToken(token);
-    const user = await User.findOne({ _id: payload.sub, active: true });
-    if (!user) return res.status(401).json({ error: 'Account is unavailable' });
-    req.user = user;
+    req.user = await getOrCreateDefaultUser();
     next();
   } catch (error) {
-    res.status(401).json({ error: error.message });
+    next(error);
   }
 }
 
@@ -45,4 +66,4 @@ async function requirePhotoAccess(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireListingAccess, requirePhotoAccess };
+module.exports = { attachDefaultUser, requireListingAccess, requirePhotoAccess };

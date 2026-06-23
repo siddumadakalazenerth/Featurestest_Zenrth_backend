@@ -2,14 +2,13 @@ const express = require('express');
 const cors = require('cors');
 
 const listingRoutes = require('./routes/listingRoutes');
-const authRoutes = require('./routes/authRoutes');
 const { listingScoped: photoListingScoped, flat: photoFlat } = require('./routes/photoRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 const { UPLOAD_ROOT } = require('./middleware/upload');
 const { PIPELINE, UPLOAD_LIMITS } = require('./constants');
 const { getQueueStatus } = require('./services/photoQueue');
 const { getToolQueueStatus } = require('./services/toolQueue');
-const { requireAuth, requireListingAccess, requirePhotoAccess } = require('./middleware/auth');
+const { attachDefaultUser, requireListingAccess, requirePhotoAccess } = require('./middleware/auth');
 
 function createApp() {
   const app = express();
@@ -35,10 +34,9 @@ function createApp() {
     });
   });
 
-  app.use('/api/auth', authRoutes);
-  app.use('/api/listings', requireAuth, listingRoutes);
-  app.use('/api/listings/:listingId/photos', requireAuth, requireListingAccess, photoListingScoped);
-  app.use('/api/photos', requireAuth, requirePhotoAccess, photoFlat);
+  app.use('/api/listings', attachDefaultUser, listingRoutes);
+  app.use('/api/listings/:listingId/photos', attachDefaultUser, requireListingAccess, photoListingScoped);
+  app.use('/api/photos', attachDefaultUser, requirePhotoAccess, photoFlat);
 
   app.use((req, res) => res.status(404).json({ error: `Not found: ${req.method} ${req.path}` }));
   app.use(errorHandler);
