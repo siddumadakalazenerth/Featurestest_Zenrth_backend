@@ -12,6 +12,18 @@ const {
 } = require('./geminiTaskService');
 const { runGeminiImageEdit } = require('./geminiImageService');
 
+// See photoQueue.js for why this is needed: Vercel can kill a serverless
+// function the instant its HTTP response is sent, so "fire and forget"
+// background work needs waitUntil() to actually be allowed to finish.
+let waitUntil = (promise) => promise;
+if (process.env.VERCEL) {
+  try {
+    waitUntil = require('@vercel/functions').waitUntil;
+  } catch {
+    // @vercel/functions not installed — falls back to plain fire-and-forget.
+  }
+}
+
 const queue = [];
 const queuedIds = new Set();
 let processing = false;
@@ -22,7 +34,7 @@ function enqueueToolJobs(ids) {
     queuedIds.add(id);
     queue.push(id);
   }
-  void processQueue();
+  waitUntil(processQueue());
 }
 
 async function runJob(job) {
