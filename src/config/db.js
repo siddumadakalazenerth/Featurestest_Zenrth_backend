@@ -2,6 +2,12 @@ const dns = require('dns');
 const mongoose = require('mongoose');
 
 async function connectDB() {
+  // Reuse an existing connection across warm serverless invocations instead
+  // of reconnecting on every request.
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+
   const uri = process.env.MONGO_URI;
   const dbName = process.env.MONGO_DB_NAME || 'zenrth';
 
