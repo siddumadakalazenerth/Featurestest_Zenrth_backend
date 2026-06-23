@@ -24,10 +24,9 @@ function getApp() {
 
 async function ensureDB() {
   if (!process.env.MONGO_URI) {
-    // Let the app run without a DB connection so /api/health still responds;
-    // routes that need Mongo will fail clearly instead of crashing the function.
-    console.warn('[serverless] MONGO_URI is not set — skipping DB connection');
-    return;
+    throw new Error(
+      'MONGO_URI is not set on this Vercel project. Add it under Project Settings → Environment Variables and redeploy.'
+    );
   }
   if (!dbConnectPromise) {
     dbConnectPromise = connectDB().catch((err) => {

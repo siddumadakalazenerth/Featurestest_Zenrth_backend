@@ -1,4 +1,4 @@
-const fs = require('fs/promises');
+const fileStore = require('./fileStore');
 const { ROOM_TYPES } = require('../constants');
 const { describeGeminiError } = require('./geminiErrorMessages');
 
@@ -83,7 +83,7 @@ function extractJson(text) {
  * @param {string} mimeType e.g. "image/jpeg"
  * @returns {Promise<{roomType, qualityScore, suitable, issues, reasoning, raw, model}>}
  */
-async function analyzeImage(filePath, mimeType) {
+async function analyzeImage(fileId, mimeType) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -91,7 +91,7 @@ async function analyzeImage(filePath, mimeType) {
     );
   }
 
-  const fileBuffer = await fs.readFile(filePath);
+  const fileBuffer = await fileStore.readFile(fileId);
   const base64Data = fileBuffer.toString('base64');
   const model = getModel();
 

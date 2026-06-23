@@ -4,7 +4,7 @@ const cors = require('cors');
 const listingRoutes = require('./routes/listingRoutes');
 const { listingScoped: photoListingScoped, flat: photoFlat } = require('./routes/photoRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
-const { UPLOAD_ROOT } = require('./middleware/upload');
+const FileBlob = require('./models/FileBlob');
 const { PIPELINE, UPLOAD_LIMITS } = require('./constants');
 const { getQueueStatus } = require('./services/photoQueue');
 const { getToolQueueStatus } = require('./services/toolQueue');
@@ -21,7 +21,17 @@ function createApp() {
   app.use(express.json());
 
   // Serve uploaded originals so the frontend can render thumbnails directly.
-  app.use('/uploads', express.static(UPLOAD_ROOT));
+  app.get('/api/files/:id', async (req, res, next) => {
+    try {
+      const blob = await FileBlob.findById(req.params.id);
+      if (!blob) return res.status(404).json({ error: 'File not found' });
+      res.set('Content-Type', blob.mimeType);
+      res.set('Cache-Control', 'public, max-age=31536000, immutable');
+      res.send(blob.data);
+    } catch (err) {
+      next(err);
+    }
+  });
 
   app.get('/api/health', (_req, res) => {
     res.json({

@@ -1,8 +1,5 @@
-const fs = require('fs/promises');
-const path = require('path');
-const crypto = require('crypto');
 const AssetVersion = require('../models/AssetVersion');
-const { UPLOAD_ROOT } = require('../middleware/upload');
+const fileStore = require('./fileStore');
 const { describeGeminiError } = require('./geminiErrorMessages');
 
 function imageModel(tool) {
@@ -92,7 +89,7 @@ Return the edited image.`;
 async function runGeminiImageEdit(job, photo) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
-  const source = await fs.readFile(photo.diskPath);
+  const source = await fileStore.readFile(photo.diskPath);
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${imageModel(job.tool)}:generateContent`,
     {
@@ -169,19 +166,15 @@ async function runGeminiImageEdit(job, photo) {
 
   const mimeType = inlineData.mimeType || inlineData.mime_type || 'image/png';
   const buffer = Buffer.from(inlineData.data, 'base64');
-  const directory = path.join(UPLOAD_ROOT, String(job.listing), 'generated');
-  await fs.mkdir(directory, { recursive: true });
-  const filename = `${Date.now()}-${crypto.randomBytes(6).toString('hex')}${extensionForMime(mimeType)}`;
-  const diskPath = path.join(directory, filename);
-  await fs.writeFile(diskPath, buffer);
-  const url = `/uploads/${job.listing}/generated/${filename}`;
+  const fileId = await fileStore.writeFile(buffer, mimeType);
+  const url = fileStore.urlFor(fileId);
   const version = await AssetVersion.create({
     listing: job.listing,
     photo: photo._id,
     toolJob: job._id,
     kind: 'generated',
     url,
-    diskPath,
+    diskPath: fileId,
     mimeType,
     sizeBytes: buffer.length,
     selected: false,

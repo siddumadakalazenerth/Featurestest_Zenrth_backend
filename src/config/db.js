@@ -21,6 +21,7 @@ async function connectDB() {
   }
 
   mongoose.set('strictQuery', true);
+  mongoose.set('bufferCommands', false);
 
   await mongoose.connect(uri, {
     dbName,

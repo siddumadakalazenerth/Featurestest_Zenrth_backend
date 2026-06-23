@@ -1,4 +1,4 @@
-const fs = require('fs/promises');
+const fileStore = require('./fileStore');
 const { describeGeminiError } = require('./geminiErrorMessages');
 
 const DEFAULT_MODEL = 'gemini-2.5-flash';
@@ -51,7 +51,7 @@ async function callGemini(parts, { json = true } = {}) {
 }
 
 async function imagePart(photo) {
-  const buffer = await fs.readFile(photo.diskPath);
+  const buffer = await fileStore.readFile(photo.diskPath);
   return {
     inline_data: {
       mime_type: photo.mimeType,

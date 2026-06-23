@@ -1,9 +1,8 @@
-const fs = require('fs/promises');
 const Listing = require('../models/Listing');
 const Photo = require('../models/Photo');
 const AssetVersion = require('../models/AssetVersion');
 const ToolJob = require('../models/ToolJob');
-const path = require('path');
+const fileStore = require('../services/fileStore');
 const {
   updatePhotoRanking,
   computeMissingRoomTypes,
@@ -25,8 +24,9 @@ function sortPhotosForDisplay(photos) {
   });
 }
 
-async function removeUploadedFiles(files) {
-  await Promise.all(files.map((file) => fs.unlink(file.path).catch(() => {})));
+async function removeUploadedFiles(_files) {
+  // No-op: with multer's memoryStorage, rejected files were never written
+  // anywhere (in memory only, in this request), so there's nothing to clean up.
 }
 
 /**
@@ -66,12 +66,13 @@ async function uploadPhotos(req, res, next) {
 
     const createdPhotos = [];
     for (const file of files) {
+      const fileId = await fileStore.writeFile(file.buffer, file.mimetype);
       const photo = await Photo.create({
         listing: listing._id,
         originalName: file.originalname,
-        storedFilename: file.filename,
-        diskPath: file.path,
-        url: `/uploads/${listing._id}/${file.filename}`,
+        storedFilename: file.originalname,
+        diskPath: fileId,
+        url: fileStore.urlFor(fileId),
         mimeType: file.mimetype,
         sizeBytes: file.size,
         status: 'pending',
@@ -127,12 +128,10 @@ async function replacePhoto(req, res, next) {
   try {
     const listing = await Listing.findById(req.params.listingId);
     if (!listing) {
-      if (req.file) await fs.unlink(req.file.path).catch(() => {});
       return res.status(404).json({ error: 'Listing not found' });
     }
     const photo = await Photo.findOne({ _id: req.params.photoId, listing: listing._id });
     if (!photo) {
-      if (req.file) await fs.unlink(req.file.path).catch(() => {});
       return res.status(404).json({ error: 'Photo not found' });
     }
     if (!req.file) return res.status(400).json({ error: 'No replacement image uploaded.' });
@@ -145,15 +144,15 @@ async function replacePhoto(req, res, next) {
       .lean();
     const totalBytes = otherPhotos.reduce((sum, item) => sum + item.sizeBytes, 0) + req.file.size;
     if (totalBytes > UPLOAD_LIMITS.maxBytesPerListing) {
-      await fs.unlink(req.file.path).catch(() => {});
       return res.status(400).json({ error: 'The replacement would exceed the 5 MB property limit.' });
     }
 
-    const previousPath = photo.diskPath;
+    const previousFileId = photo.diskPath;
+    const newFileId = await fileStore.writeFile(req.file.buffer, req.file.mimetype);
     photo.originalName = req.file.originalname;
-    photo.storedFilename = req.file.filename;
-    photo.diskPath = req.file.path;
-    photo.url = `/uploads/${listing._id}/${req.file.filename}`;
+    photo.storedFilename = req.file.originalname;
+    photo.diskPath = newFileId;
+    photo.url = fileStore.urlFor(newFileId);
     photo.mimeType = req.file.mimetype;
     photo.sizeBytes = req.file.size;
     photo.status = 'pending';
@@ -163,12 +162,11 @@ async function replacePhoto(req, res, next) {
     photo.isCover = false;
     photo.coverRank = null;
     await photo.save();
-    await fs.unlink(previousPath).catch(() => {});
+    await fileStore.unlink(previousFileId);
 
     enqueuePhotos([photo._id]);
     res.status(202).json(photo);
   } catch (err) {
-    if (req.file) await fs.unlink(req.file.path).catch(() => {});
     next(err);
   }
 }
@@ -177,7 +175,7 @@ async function deletePhoto(req, res, next) {
   try {
     const photo = await Photo.findByIdAndDelete(req.params.photoId);
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
-    await fs.unlink(photo.diskPath).catch(() => {}); // best-effort disk cleanup
+    await fileStore.unlink(photo.diskPath); // best-effort cleanup of the stored blob
     await Promise.all([
       AssetVersion.deleteMany({ photo: photo._id }),
       ToolJob.deleteMany({ photo: photo._id }),
@@ -288,7 +286,7 @@ async function restoreVersion(req, res, next) {
     await version.save();
     photo.url = version.url;
     photo.diskPath = version.diskPath;
-    photo.storedFilename = path.basename(version.diskPath);
+    photo.storedFilename = photo.originalName;
     photo.mimeType = version.mimeType;
     photo.sizeBytes = version.sizeBytes || photo.sizeBytes;
     photo.status = 'pending';
